@@ -2,6 +2,10 @@ import pygame
 import pygame_menu
 import sys
 from random import choice
+import socket
+import pickle
+import sys                                  # Für sauberes Beenden (sys.exit)
+import settings as s                          # Importiert die globalen Einstellungen (z. B. Auflösung, Farben)
 
 from functions.enemy import Enemy
 from functions.player import Player
@@ -17,7 +21,48 @@ WIDTH, HEIGHT = 800, 600
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
 pygame.display.set_caption("Space Invaders")
 
-# Load background image
+pygame.init()                                 # Initialisiert alle Pygame-Module
+window = pygame.display.set_mode((s.SCREEN_WIDTH, s.SCREEN_HEIGHT))  # Erzeugt das Spiel-Fenster
+pygame.display.set_caption("Multiplayer Space Invader")              # Setzt den Fenstertitel
+clock = pygame.time.Clock()                   # Erzeugt eine Uhr zur Steuerung der Framerate
+
+sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)             # Erstellt ein TCP/IP-Socket
+sock.connect(('127.0.0.1', 65432))                                   # Verbindet sich mit dem Server (hier lokal)
+
+# Spielerobjekte werden erzeugt – Startpositionen kommen gleich vom Server
+spieler = Player((0, 0), 0)         # Lokaler Spieler (blue)
+gegner = Player((0, 0), 1)           # Gegner (red)
+
+running = True                                  # Spielschleife aktiv
+while running:
+    clock.tick(s.FPS)                           # Begrenze Framerate auf z. B. 60 FPS
+    window.fill(s.BLACK)                        # Füllt den Hintergrund schwarz
+
+    for event in pygame.event.get():            # Ereignisschleife
+        if event.type == pygame.QUIT:           # Wenn das Fenster geschlossen wird
+            running = False                     # Spielschleife beenden
+
+    keys = pygame.key.get_pressed()             # Tastenzustand abfragen
+    richtung = 0                                # Standard: keine Bewegung
+    if keys[pygame.K_LEFT]:                     # Pfeiltaste links
+        richtung = -1
+    elif keys[pygame.K_RIGHT]:                  # Pfeiltaste rechts
+        richtung = 1
+
+    nachricht = {"richtung": richtung}          # Verpacke Eingabe in ein Dictionary
+    sock.sendall(pickle.dumps(nachricht))       # Sende die Daten serialisiert an den Server
+
+    daten = pickle.loads(sock.recv(2048))       # Empfange aktualisierte Positionen vom Server
+    spieler.rect.topleft = daten[0]             # Setze eigene Position
+    gegner.rect.topleft = daten[1]              # Setze Gegnerposition
+
+    spieler.drawSelf(window)                    # Zeichne eigenen Spieler
+    gegner.drawSelf(window)                     # Zeichne Gegner
+    pygame.display.update()                     # Aktualisiere Bildschirm
+
+pygame.quit()                                   # Beende Pygame
+sys.exit()                                      # Beende das Programm vollständig
+
 image = pygame.image.load("resources/space.jpg")
 image = pygame.transform.scale(image, (WIDTH, HEIGHT))
 
@@ -42,7 +87,6 @@ shotCountdown = 0
 enemyFieldWidth = 8
 enemyFieldHeight = 4
 score = 0
-scoreboard = []
 lives = 3
 playerName = "Player"
 enemyShotCountdown = 60  # Reset shot countdown to 60 frames
@@ -160,22 +204,9 @@ def stopGame():
     gameoverScreen.disable()  # Disable the game over menu
 
 
-def openScoreboard():
-    menuScreen.disable()  # Disable the menu
-    scoreboardScreen.enable()  # Enable the scoreboard
-    scoreboardScreen.clear()  # Clear the scoreboard
-    scoreboardScreen.add.label('Scoreboard', font_size=40)  # Add a label to the menu7
-    scoreboard.sort(key=lambda n: n[1], reverse=True)
-    for i in range(len(scoreboard)):
-        scoreboardScreen.add.label(f'{i + 1}. {scoreboard[i][0]}: {scoreboard[i][1]}', font_size=20)
-    scoreboardScreen.add.button('Back to Menu', gotoMenu)  # Button to go back to the menu
-    scoreboardScreen.mainloop(screen)  # Run the scoreboard menu
-
-
 def gotoMenu():
     global gameState
     gameState = "menu"  # Change the game state to "menu"
-    scoreboardScreen.disable()  # Disable the scoreboard
     pauseScreen.disable()  # Disable the pause menu
     gameoverScreen.disable()  # Disable the game over menu
 
@@ -188,12 +219,7 @@ def getName(value):
 menuScreen = pygame_menu.Menu('Space Invaders', WIDTH, HEIGHT, theme=menu_theme)
 menuScreen.add.label('Welcome to Space Invaders', font_size=40)  # Add a label to the menu
 menuScreen.add.button('Play', startGame)  # Button to start the game
-menuScreen.add.button('Scoreboard', openScoreboard)  # Button to open the scoreboard
 menuScreen.add.button('Quit', stopGame)  # Button to quit the game
-
-scoreboardScreen = pygame_menu.Menu('Scoreboard', WIDTH, HEIGHT, theme=menu_theme)
-scoreboardScreen.add.label('Scoreboard', font_size=40)  # Add a label to the menu
-scoreboardScreen.add.button('Back to Menu', gotoMenu)  # Button to go back to the menu
 
 pauseScreen = pygame_menu.Menu('Pause', WIDTH, HEIGHT, theme=menu_theme)
 pauseScreen.add.label('Game Paused', font_size=40)  # Add a label to the menu
@@ -235,7 +261,6 @@ while running:
             pauseScreen.disable()  # Disable the pause menu
             gameoverScreen.enable()  # Enable the game over menu
             gameoverScreen.mainloop(screen)  # Run the game over menu
-            scoreboard.append([playerName, score])  # Add the score to the scoreboard
 
     pygame.display.update()             # Update the display
 
